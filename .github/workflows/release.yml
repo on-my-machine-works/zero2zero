@@ -39,7 +39,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install build and test dependencies
         run: |
@@ -144,12 +144,10 @@ jobs:
           )
 
           if gh release view "${TAG}" >/dev/null 2>&1; then
-            gh release upload "${TAG}" "${assets[@]}" --clobber
-            gh release edit "${TAG}" --title "zero2zero ${TAG}" --notes-file /tmp/release-notes.md --latest
-          else
-            gh release create "${TAG}" "${assets[@]}" \
-              --target "${GITHUB_SHA}" \
-              --title "zero2zero ${TAG}" \
-              --notes-file /tmp/release-notes.md \
-              --latest
+            gh release delete "${TAG}" --yes
           fi
+          gh release create "${TAG}" "${assets[@]}" \
+            --target "${GITHUB_SHA}" \
+            --title "zero2zero ${TAG}" \
+            --notes-file /tmp/release-notes.md \
+            --latest
