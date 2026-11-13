@@ -1,0 +1,12 @@
+/build/
+/dist/
+*.o
+src/z2z-ui
+__pycache__/
+*.pyc
+.pytest_cache/
+/flipper_app/dist/*
+!/flipper_app/dist/zero2zero.fap
+/flipper_app/.ufbt/
+/flipper_app/.vscode/
+*.ppm
