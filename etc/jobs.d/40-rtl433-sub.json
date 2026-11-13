@@ -1,0 +1,25 @@
+{
+  "id": "rtl433-sub",
+  "title": "Decode Latest .sub (rtl_433)",
+  "description": "Pulls the newest /ext/subghz/*.sub capture, converts to .ook, decodes via Kali rtl_433, and saves /ext/apps_data/zero2zero/rtl433_last.txt.",
+  "pull_files": [
+    {
+      "remote_dir": "/ext/subghz",
+      "suffix": ".sub",
+      "local": "latest.sub"
+    }
+  ],
+  "command": [
+    "python3",
+    "-c",
+    "import os, pathlib; from z2z.subghz import parse_and_analyze_sub; raw = pathlib.Path('latest.sub').read_bytes(); rep = parse_and_analyze_sub(raw, use_rtl433=True); src = os.path.basename(os.environ.get('Z2Z_PULLED_REMOTE', 'latest.sub')); txt = f'File: {src}\\n' + rep.format_compact(); pathlib.Path('rtl433_last.txt').write_text(txt + '\\n'); print(txt)"
+  ],
+  "push_files": [
+    {
+      "local": "rtl433_last.txt",
+      "remote": "/ext/apps_data/zero2zero/rtl433_last.txt"
+    }
+  ],
+  "timeout_sec": 20,
+  "alert_on_finish": true
+}

@@ -1,0 +1,15 @@
+[Unit]
+Description=zero2zero Pocket Watch Service (Continuous Flipper BLE Mailbox Poller)
+After=bluetooth.service
+Conflicts=z2zd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/zero2zero/z2zd --socket /run/zero2zero/rpc.sock --watch --idle-timeout 0
+RuntimeDirectory=zero2zero
+RuntimeDirectoryMode=0755
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

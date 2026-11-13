@@ -1,0 +1,29 @@
+{
+  "id": "tshark-pcap",
+  "title": "Dissect Latest .pcap (tshark)",
+  "description": "Pulls the newest .pcap/.pcapng capture from Flipper SD and dissects protocol hierarchy via Kali tshark.",
+  "pull_files": [
+    {
+      "remote_dirs": [
+        "/ext/apps_data/pcaps",
+        "/ext/pcaps",
+        "/ext/apps_data/esp32_wifi_marauder"
+      ],
+      "suffixes": [".pcap", ".pcapng", ".cap"],
+      "local": "latest.pcap"
+    }
+  ],
+  "command": [
+    "python3",
+    "-c",
+    "import os, pathlib; from z2z.captures import parse_pcap_capture; raw = pathlib.Path('latest.pcap').read_bytes(); rep = parse_pcap_capture(raw); src = os.path.basename(os.environ.get('Z2Z_PULLED_REMOTE', 'latest.pcap')); txt = f'File: {src}\\n' + str(rep['compact_text']); pathlib.Path('pcap_summary.txt').write_text(txt + '\\n'); print(txt)"
+  ],
+  "push_files": [
+    {
+      "local": "pcap_summary.txt",
+      "remote": "/ext/apps_data/zero2zero/pcap_summary.txt"
+    }
+  ],
+  "timeout_sec": 25,
+  "alert_on_finish": true
+}

@@ -1,0 +1,13 @@
+[Unit]
+Description=zero2zero BLE Offload Companion Daemon (On-Demand)
+Requires=z2zd.socket
+After=bluetooth.service z2zd.socket
+
+[Service]
+Type=simple
+ExecStart=/usr/lib/zero2zero/z2zd --socket /run/zero2zero/rpc.sock --idle-timeout 300
+Restart=no
+NoNewPrivileges=false
+
+[Install]
+Also=z2zd.socket

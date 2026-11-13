@@ -1,0 +1,19 @@
+{
+  "id": "note-sync",
+  "title": "Sync Host Status Note",
+  "description": "Writes a timestamped Kali host & network snapshot to /ext/apps_data/zero2zero/kali_status.txt on Flipper.",
+  "pull_files": [],
+  "command": [
+    "python3",
+    "-c",
+    "import pathlib; from z2z.netdiag import build_net_report; txt = build_net_report()['compact_text']; pathlib.Path('kali_status.txt').write_text(txt + '\\n'); print(txt)"
+  ],
+  "push_files": [
+    {
+      "local": "kali_status.txt",
+      "remote": "/ext/apps_data/zero2zero/kali_status.txt"
+    }
+  ],
+  "timeout_sec": 20,
+  "alert_on_finish": true
+}

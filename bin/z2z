@@ -1,0 +1,20 @@
+#!/usr/bin/env python3
+"""z2z CLI entrypoint (works both in-repo and installed in /usr/bin/z2z)."""
+
+import os
+from pathlib import Path
+import sys
+
+for cand in (
+    Path(__file__).resolve().parents[1] / "python",
+    Path("/usr/lib/zero2zero/python"),
+):
+    if (cand / "z2z").is_dir():
+        sys.path.insert(0, str(cand))
+        break
+
+from z2z.cli import main  # noqa: E402
+
+if __name__ == "__main__":
+    os.environ.setdefault("Z2Z_DAEMON_BIN", str(Path(__file__).resolve().with_name("z2zd")))
+    raise SystemExit(main())

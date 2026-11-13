@@ -1,0 +1,19 @@
+{
+  "id": "nmap-lan",
+  "title": "LAN Host Inventory (nmap)",
+  "description": "Runs Kali nmap host discovery on the active IPv4 subnet and pushes /ext/apps_data/zero2zero/nmap_hosts.txt to Flipper.",
+  "pull_files": [],
+  "command": [
+    "python3",
+    "-c",
+    "import ipaddress, json, pathlib, shutil, subprocess; raw = subprocess.run(['ip', '-j', '-4', 'addr', 'show', 'up'], capture_output=True, text=True).stdout or '[]'; cidrs = [f\"{ai['local']}/{ai['prefixlen']}\" for ifc in json.loads(raw) if ifc.get('ifname') != 'lo' for ai in ifc.get('addr_info', []) if ai.get('scope') == 'global' and int(ai.get('prefixlen', 32)) >= 20]; target = str(ipaddress.ip_interface(cidrs[0]).network) if cidrs else ''; nmap_bin = shutil.which('nmap'); out = (subprocess.run([nmap_bin, '-sn', '--open', '-T4', target], capture_output=True, text=True, timeout=22).stdout if (nmap_bin and target) else ('No active /20+ IPv4 subnet' if not target else 'nmap not installed')); lines = [f'Subnet: {target or \"none\"}']; lines.extend([ln.replace('Nmap scan report for ', 'Host: ').strip()[:46] for ln in out.splitlines() if ('Nmap scan report for ' in ln or 'Nmap done:' in ln)][:12]); txt = '\\n'.join(lines); pathlib.Path('nmap_hosts.txt').write_text(txt + '\\n'); print(txt)"
+  ],
+  "push_files": [
+    {
+      "local": "nmap_hosts.txt",
+      "remote": "/ext/apps_data/zero2zero/nmap_hosts.txt"
+    }
+  ],
+  "timeout_sec": 28,
+  "alert_on_finish": true
+}

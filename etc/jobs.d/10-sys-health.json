@@ -1,0 +1,10 @@
+{
+  "id": "sys-health",
+  "title": "Kali Health & Interfaces",
+  "description": "Reports CardputerZero SoC temperature, RAM, battery, and active IPv4 interfaces.",
+  "pull_files": [],
+  "command": ["python3", "-m", "z2z.netdiag", "--compact"],
+  "push_files": [],
+  "timeout_sec": 15,
+  "alert_on_finish": false
+}

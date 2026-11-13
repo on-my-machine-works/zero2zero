@@ -1,0 +1,19 @@
+{
+  "id": "lan-neighbors",
+  "title": "LAN & Route Snapshot",
+  "description": "Collects active IPv4 routes and ARP/NDP neighbors on Kali and saves /ext/apps_data/zero2zero/lan_neighbors.txt.",
+  "pull_files": [],
+  "command": [
+    "python3",
+    "-c",
+    "import pathlib, subprocess; r = subprocess.run(['ip', '-4', 'route'], capture_output=True, text=True).stdout.strip(); n = subprocess.run(['ip', '-4', 'neigh'], capture_output=True, text=True).stdout.strip(); out = '=== Routes ===\\n' + (r or '(none)') + '\\n\\n=== Neighbors ===\\n' + (n or '(none)'); pathlib.Path('lan_neighbors.txt').write_text(out + '\\n'); print(out[:600])"
+  ],
+  "push_files": [
+    {
+      "local": "lan_neighbors.txt",
+      "remote": "/ext/apps_data/zero2zero/lan_neighbors.txt"
+    }
+  ],
+  "timeout_sec": 15,
+  "alert_on_finish": false
+}
