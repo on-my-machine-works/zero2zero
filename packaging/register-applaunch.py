@@ -38,34 +38,66 @@ def desktop_config_key(filename: str) -> str:
     return f"app_desktop_{''.join(sanitized)}_{h:08x}"
 
 
-def write_z2z_icon_png(out_path: Path) -> None:
-    w, h = 100, 100
-    bg = (12, 22, 42)
-    fg = (255, 142, 44)  # Flipper orange
-    accent = (56, 196, 255)  # Kali cyan
+TINY3X5 = {
+    "2": [3, 1, 2, 4, 7],
+    "B": [6, 5, 6, 5, 6],
+    "E": [7, 4, 6, 4, 7],
+    "L": [4, 4, 4, 4, 7],
+    "Z": [7, 1, 2, 4, 7],
+}
 
-    # 8x8 bidirectional link glyph
-    glyph = [0x18, 0x3C, 0x66, 0xFF, 0xFF, 0x66, 0x3C, 0x18]
+
+def write_z2z_icon_png(out_path: Path) -> None:
+    """Render a 100x100 APPLaunch icon matching kali-on-cardputerzero's visual style."""
+    w, h = 100, 100
+    bg = (28, 18, 12)
+    fg = (255, 142, 44)       # Flipper orange border & glyph
+    accent = (64, 212, 255)   # Kali cyan bottom badge
+    glyph = [0x08, 0x04, 0xFE, 0x00, 0x00, 0x7F, 0x20, 0x10]  # Bi-directional harpoons (⇌)
+    tag = "BLE"
+
+    buf = [[bg for _ in range(w)] for _ in range(h)]
+
+    for y in range(h):
+        for x in range(w):
+            dx = min(x, w - 1 - x)
+            dy = min(y, h - 1 - y)
+            if dx + dy < 10:
+                buf[y][x] = (0, 0, 0)
+            elif x in (2, 3, w - 3, w - 4) or y in (2, 3, h - 3, h - 4):
+                buf[y][x] = fg
+            elif y == 74 and 10 <= x < w - 10:
+                buf[y][x] = (fg[0] // 2, fg[1] // 2, fg[2] // 2)
+
+    # 8x8 main glyph in 5x5 cells on a 6px grid at (26, 16)
+    for gy in range(8):
+        for gx in range(8):
+            if (glyph[gy] >> (7 - gx)) & 1:
+                for sy in range(5):
+                    for sx in range(5):
+                        buf[16 + gy * 6 + sy][26 + gx * 6 + sx] = fg
+
+    # Bottom 3x5 mini-label scaled 2x at y=80
+    tw = len(tag) * 8 - 2
+    tx0 = (w - tw) // 2
+    for idx, ch in enumerate(tag):
+        pat = TINY3X5.get(ch)
+        if not pat:
+            continue
+        for ry in range(5):
+            for rx in range(3):
+                if (pat[ry] >> (2 - rx)) & 1:
+                    for sy in range(2):
+                        for sx in range(2):
+                            px = tx0 + idx * 8 + rx * 2 + sx
+                            py = 80 + ry * 2 + sy
+                            if 0 <= px < w and 0 <= py < h:
+                                buf[py][px] = accent
 
     raw = bytearray()
     for y in range(h):
-        raw.append(0)  # PNG filter type 0
-        for x in range(w):
-            r, g, b = bg
-            # Rounded card border
-            if x in (3, 96) and 8 <= y <= 91:
-                r, g, b = accent
-            elif y in (3, 96) and 8 <= x <= 91:
-                r, g, b = accent
-            # Centered 8x8 glyph scaled 6x (48x48 at x=26..73, y=20..67)
-            elif 26 <= x < 74 and 20 <= y < 68:
-                gx = (x - 26) // 6
-                gy = (y - 20) // 6
-                if (glyph[gy] >> (7 - gx)) & 1:
-                    r, g, b = fg if gx >= 4 else accent
-            # Bottom accent bar
-            elif 24 <= x <= 76 and 78 <= y <= 83:
-                r, g, b = fg if x >= 50 else accent
+        raw.append(0)
+        for r, g, b in buf[y]:
             raw.extend((r, g, b))
 
     def _chunk(ctype: bytes, data: bytes) -> bytes:

@@ -95,6 +95,10 @@ if [ "$1" = "configure" ]; then
         systemctl enable --now z2zd.socket >/dev/null 2>&1 || true
     fi
     pkill -f '/usr/lib/zero2zero/z2zd|z2z\.daemon' >/dev/null 2>&1 || true
+    ap_pid="$(pgrep -xo M5CardputerZero-APPLaunch 2>/dev/null || true)"
+    if [ -n "$ap_pid" ] && ! pgrep -P "$ap_pid" >/dev/null 2>&1 && [ -d /run/user/1000 ]; then
+        runuser -u kali -- env XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart APPLaunch.service >/dev/null 2>&1 || true
+    fi
 fi
 exit 0
 EOF
@@ -108,6 +112,10 @@ if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
         systemctl disable --now z2z-watch.service z2zd.service z2zd.socket >/dev/null 2>&1 || true
     fi
     /usr/lib/zero2zero/register-applaunch.py --root / --remove || true
+    ap_pid="$(pgrep -xo M5CardputerZero-APPLaunch 2>/dev/null || true)"
+    if [ -n "$ap_pid" ] && ! pgrep -P "$ap_pid" >/dev/null 2>&1 && [ -d /run/user/1000 ]; then
+        runuser -u kali -- env XDG_RUNTIME_DIR=/run/user/1000 systemctl --user restart APPLaunch.service >/dev/null 2>&1 || true
+    fi
 fi
 exit 0
 EOF
