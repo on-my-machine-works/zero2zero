@@ -6,7 +6,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="${VERSION:-0.1.0}"
+VERSION="${VERSION:-0.1.1}"
 ARCH="${ARCH:-$(dpkg --print-architecture)}"
 PKG_NAME="zero2zero"
 STAGE_DIR="$(mktemp -d)"

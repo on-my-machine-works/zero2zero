@@ -464,6 +464,235 @@ static inline void cz_inputs_close(int *fds, int n)
     }
 }
 
+/*
+ * CardputerZero TCA8418 46-key I2C matrix keyboard `Sym` layer (`linux,keymap1`)
+ * and evdev -> ASCII helpers:
+ *   - When `Sym` (`KEY_CD = 0x17f`) is active (held, one-shot tapped, or double-tap
+ *     locked in `tca8418_fsm`), `tca8418_keypad_m5stack.ko` emits 32 synthetic evdev
+ *     keycodes mapped via `/usr/share/keymaps/tca8418_keypad_m5stack_keymap.map`.
+ *   - `cz_is_tca8418_fd()` distinguishes the internal TCA8418 keypad from external
+ *     USB/Bluetooth keyboards so standard US QWERTY punctuation stays intact on
+ *     external keyboards while all 32 `Sym` legends work natively on the device.
+ */
+#define CZ_TCA8418_KEYMAP_PATH "/usr/share/keymaps/tca8418_keypad_m5stack_keymap.map"
+#define CZ_TCA8418_SYM_MAX 256
+
+static inline void cz_tca8418_sym_defaults(char sym_map[CZ_TCA8418_SYM_MAX])
+{
+    memset(sym_map, 0, CZ_TCA8418_SYM_MAX);
+    /* Row 4 & Row 0: Sym + 1..0 */
+    sym_map[26] = '!';  /* KEY_LEFTBRACE        */
+    sym_map[27] = '@';  /* KEY_RIGHTBRACE       */
+    sym_map[39] = '#';  /* KEY_SEMICOLON        */
+    sym_map[40] = '$';  /* KEY_APOSTROPHE       */
+    sym_map[41] = '%';  /* KEY_GRAVE            */
+    sym_map[43] = '^';  /* KEY_BACKSLASH        */
+    sym_map[51] = '&';  /* KEY_COMMA            */
+    sym_map[52] = '*';  /* KEY_DOT              */
+    sym_map[53] = '(';  /* KEY_SLASH            */
+    sym_map[94] = ')';  /* KEY_MUHENKAN         */
+    /* Row 1: Sym + Q..P */
+    sym_map[55] = '~';  /* KEY_KPASTERISK       */
+    sym_map[69] = '`';  /* KEY_NUMLOCK          */
+    sym_map[70] = '_';  /* KEY_SCROLLLOCK       */
+    sym_map[71] = '-';  /* KEY_KP7              */
+    sym_map[72] = '+';  /* KEY_KP8              */
+    sym_map[73] = '=';  /* KEY_KP9              */
+    sym_map[74] = '[';  /* KEY_KPMINUS          */
+    sym_map[75] = ']';  /* KEY_KP4              */
+    sym_map[76] = '{';  /* KEY_KP5              */
+    sym_map[77] = '}';  /* KEY_KP6              */
+    /* Row 2: Sym + A,S,D,G,H,J,K,L (F has no Sym legend) */
+    sym_map[79] = ';';  /* KEY_KP1              */
+    sym_map[80] = ':';  /* KEY_KP2              */
+    sym_map[81] = '\''; /* KEY_KP3              */
+    sym_map[82] = '"';  /* KEY_KP0              */
+    sym_map[83] = '<';  /* KEY_KPDOT            */
+    sym_map[85] = '>';  /* KEY_ZENKAKUHANKAKU   */
+    sym_map[86] = '\\'; /* KEY_102ND            */
+    sym_map[89] = '|';  /* KEY_RO               */
+    /* Row 3: Sym + V,B,N,M (Z,X,C have no Sym legend) */
+    sym_map[90] = ',';  /* KEY_KATAKANA         */
+    sym_map[91] = '.';  /* KEY_HIRAGANA         */
+    sym_map[92] = '/';  /* KEY_HENKAN           */
+    sym_map[93] = '?';  /* KEY_KATAKANAHIRAGANA */
+}
+
+static inline char cz_keysym_to_ascii(const char *name)
+{
+    static const struct {
+        const char *name;
+        char ch;
+    } tbl[] = {
+        { "space", ' ' },        { "exclam", '!' },       { "quotedbl", '"' },
+        { "numbersign", '#' },   { "dollar", '$' },       { "percent", '%' },
+        { "ampersand", '&' },    { "apostrophe", '\'' },  { "quoteright", '\'' },
+        { "parenleft", '(' },    { "parenright", ')' },   { "asterisk", '*' },
+        { "plus", '+' },         { "comma", ',' },        { "minus", '-' },
+        { "period", '.' },       { "slash", '/' },        { "colon", ':' },
+        { "semicolon", ';' },    { "less", '<' },         { "equal", '=' },
+        { "greater", '>' },      { "question", '?' },     { "at", '@' },
+        { "bracketleft", '[' },  { "backslash", '\\' },   { "bracketright", ']' },
+        { "asciicircum", '^' },  { "underscore", '_' },   { "grave", '`' },
+        { "quoteleft", '`' },    { "braceleft", '{' },    { "bar", '|' },
+        { "braceright", '}' },   { "asciitilde", '~' },
+    };
+    if (!name || !*name) return 0;
+    if (name[1] == '\0' && (unsigned char)name[0] >= 0x20 && (unsigned char)name[0] <= 0x7E)
+        return name[0];
+    for (size_t i = 0; i < sizeof(tbl) / sizeof(tbl[0]); i++) {
+        if (strcmp(name, tbl[i].name) == 0)
+            return tbl[i].ch;
+    }
+    if ((name[0] == 'U' || name[0] == 'u') && isxdigit((unsigned char)name[1])) {
+        char *end = NULL;
+        unsigned long cp = strtoul(name + 1, &end, 16);
+        if (end && *end == '\0' && cp >= 0x20 && cp <= 0x7E)
+            return (char)cp;
+    }
+    return 0;
+}
+
+static inline void cz_tca8418_keymap_load(const char *path, char sym_map[CZ_TCA8418_SYM_MAX])
+{
+    cz_tca8418_sym_defaults(sym_map);
+    if (!path || !*path) return;
+    FILE *fp = fopen(path, "r");
+    if (!fp) return;
+
+    char line[256];
+    while (fgets(line, sizeof(line), fp)) {
+        char *hash = strchr(line, '#');
+        if (hash) *hash = '\0';
+        char *p = line;
+        while (*p && isspace((unsigned char)*p)) p++;
+        if (!*p) continue;
+        unsigned int kc = 0;
+        char sym[64] = "";
+        if (sscanf(p, "keycode %u = %63s", &kc, sym) == 2 && kc < CZ_TCA8418_SYM_MAX) {
+            char ch = cz_keysym_to_ascii(sym);
+            if (ch != 0)
+                sym_map[kc] = ch;
+        }
+    }
+    fclose(fp);
+}
+
+static inline int cz_is_tca8418_fd(int fd)
+{
+    struct stat st, ref;
+    if (fstat(fd, &st) == 0) {
+        if (stat("/dev/input/by-path/platform-3f804000.i2c-event", &ref) == 0 &&
+            st.st_rdev == ref.st_rdev)
+            return 1;
+        if (stat("/dev/input/cardputer-zero-internal", &ref) == 0 &&
+            st.st_rdev == ref.st_rdev)
+            return 1;
+    }
+    char name[64] = "";
+    if (ioctl(fd, EVIOCGNAME(sizeof(name)), name) >= 0) {
+        for (const char *p = name; *p; p++) {
+            if (tolower((unsigned char)p[0]) == 't' &&
+                tolower((unsigned char)p[1]) == 'c' &&
+                tolower((unsigned char)p[2]) == 'a' &&
+                p[3] == '8' && p[4] == '4' && p[5] == '1' && p[6] == '8')
+                return 1;
+        }
+    }
+    return 0;
+}
+
+static inline int cz_test_evdev_bit(const unsigned long *bits, unsigned int bit)
+{
+    unsigned int bpl = (unsigned int)(sizeof(unsigned long) * 8);
+    return (int)((bits[bit / bpl] >> (bit % bpl)) & 1UL);
+}
+
+static inline void cz_inputs_sync_modifiers(const int *fds, int n,
+                                            int *shift_out, int *ctrl_out, int *alt_out)
+{
+    int sh = 0, ct = 0, al = 0;
+    for (int i = 0; i < n; i++) {
+        unsigned long kbits[(KEY_MAX + 1) / (sizeof(unsigned long) * 8) + 1];
+        memset(kbits, 0, sizeof(kbits));
+        if (fds[i] >= 0 && ioctl(fds[i], EVIOCGKEY(sizeof(kbits)), kbits) >= 0) {
+            if (cz_test_evdev_bit(kbits, KEY_LEFTSHIFT) || cz_test_evdev_bit(kbits, KEY_RIGHTSHIFT))
+                sh = 1;
+            if (cz_test_evdev_bit(kbits, KEY_LEFTCTRL) || cz_test_evdev_bit(kbits, KEY_RIGHTCTRL))
+                ct = 1;
+            if (cz_test_evdev_bit(kbits, KEY_LEFTALT) || cz_test_evdev_bit(kbits, KEY_RIGHTALT))
+                al = 1;
+        }
+    }
+    if (shift_out) *shift_out = sh;
+    if (ctrl_out)  *ctrl_out = ct;
+    if (alt_out)   *alt_out = al;
+}
+
+/* Standard US QWERTY evdev keycode -> ASCII (0 if unmapped) */
+static inline int cz_us_qwerty_to_ascii(int code, int shift)
+{
+    switch (code) {
+        case KEY_A: return shift ? 'A' : 'a';
+        case KEY_B: return shift ? 'B' : 'b';
+        case KEY_C: return shift ? 'C' : 'c';
+        case KEY_D: return shift ? 'D' : 'd';
+        case KEY_E: return shift ? 'E' : 'e';
+        case KEY_F: return shift ? 'F' : 'f';
+        case KEY_G: return shift ? 'G' : 'g';
+        case KEY_H: return shift ? 'H' : 'h';
+        case KEY_I: return shift ? 'I' : 'i';
+        case KEY_J: return shift ? 'J' : 'j';
+        case KEY_K: return shift ? 'K' : 'k';
+        case KEY_L: return shift ? 'L' : 'l';
+        case KEY_M: return shift ? 'M' : 'm';
+        case KEY_N: return shift ? 'N' : 'n';
+        case KEY_O: return shift ? 'O' : 'o';
+        case KEY_P: return shift ? 'P' : 'p';
+        case KEY_Q: return shift ? 'Q' : 'q';
+        case KEY_R: return shift ? 'R' : 'r';
+        case KEY_S: return shift ? 'S' : 's';
+        case KEY_T: return shift ? 'T' : 't';
+        case KEY_U: return shift ? 'U' : 'u';
+        case KEY_V: return shift ? 'V' : 'v';
+        case KEY_W: return shift ? 'W' : 'w';
+        case KEY_X: return shift ? 'X' : 'x';
+        case KEY_Y: return shift ? 'Y' : 'y';
+        case KEY_Z: return shift ? 'Z' : 'z';
+        case KEY_1: return shift ? '!' : '1';
+        case KEY_2: return shift ? '@' : '2';
+        case KEY_3: return shift ? '#' : '3';
+        case KEY_4: return shift ? '$' : '4';
+        case KEY_5: return shift ? '%' : '5';
+        case KEY_6: return shift ? '^' : '6';
+        case KEY_7: return shift ? '&' : '7';
+        case KEY_8: return shift ? '*' : '8';
+        case KEY_9: return shift ? '(' : '9';
+        case KEY_0: return shift ? ')' : '0';
+        case KEY_MINUS:      return shift ? '_' : '-';
+        case KEY_EQUAL:      return shift ? '+' : '=';
+        case KEY_LEFTBRACE:  return shift ? '{' : '[';
+        case KEY_RIGHTBRACE: return shift ? '}' : ']';
+        case KEY_BACKSLASH:  return shift ? '|' : '\\';
+        case KEY_SEMICOLON:  return shift ? ':' : ';';
+        case KEY_APOSTROPHE: return shift ? '"' : '\'';
+        case KEY_GRAVE:      return shift ? '~' : '`';
+        case KEY_COMMA:      return shift ? '<' : ',';
+        case KEY_DOT:        return shift ? '>' : '.';
+        case KEY_SLASH:      return shift ? '?' : '/';
+        case KEY_SPACE:      return ' ';
+        default: return 0;
+    }
+}
+
+static inline int cz_evdev_to_ascii(const char sym_map[CZ_TCA8418_SYM_MAX],
+                                    int is_tca8418, int code, int shift)
+{
+    if (is_tca8418 && sym_map && code >= 0 && code < CZ_TCA8418_SYM_MAX && sym_map[code] != 0)
+        return (unsigned char)sym_map[code];
+    return cz_us_qwerty_to_ascii(code, shift);
+}
+
 static inline double cz_mono_sec(void)
 {
     struct timespec ts;

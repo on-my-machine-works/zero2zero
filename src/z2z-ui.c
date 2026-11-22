@@ -249,6 +249,7 @@ struct app_state {
     int studio_edit_active;
     int studio_tpl_idx;
     int shift_held;
+    char sym_map[CZ_TCA8418_SYM_MAX];
 
     char alert_mode[12];
 
@@ -1443,56 +1444,6 @@ static int keycode_to_digit(int code)
     }
 }
 
-static int evdev_to_ascii(int code, int shift)
-{
-    int dg = keycode_to_digit(code);
-    if (dg >= 0) {
-        if (!shift) return dg;
-        static const char sh_num[10] = { ')', '!', '@', '#', '$', '%', '^', '&', '*', '(' };
-        return sh_num[dg - '0'];
-    }
-    switch (code) {
-        case KEY_A: return shift ? 'A' : 'a';
-        case KEY_B: return shift ? 'B' : 'b';
-        case KEY_C: return shift ? 'C' : 'c';
-        case KEY_D: return shift ? 'D' : 'd';
-        case KEY_E: return shift ? 'E' : 'e';
-        case KEY_F: return shift ? 'F' : 'f';
-        case KEY_G: return shift ? 'G' : 'g';
-        case KEY_H: return shift ? 'H' : 'h';
-        case KEY_I: return shift ? 'I' : 'i';
-        case KEY_J: return shift ? 'J' : 'j';
-        case KEY_K: return shift ? 'K' : 'k';
-        case KEY_L: return shift ? 'L' : 'l';
-        case KEY_M: return shift ? 'M' : 'm';
-        case KEY_N: return shift ? 'N' : 'n';
-        case KEY_O: return shift ? 'O' : 'o';
-        case KEY_P: return shift ? 'P' : 'p';
-        case KEY_Q: return shift ? 'Q' : 'q';
-        case KEY_R: return shift ? 'R' : 'r';
-        case KEY_S: return shift ? 'S' : 's';
-        case KEY_T: return shift ? 'T' : 't';
-        case KEY_U: return shift ? 'U' : 'u';
-        case KEY_V: return shift ? 'V' : 'v';
-        case KEY_W: return shift ? 'W' : 'w';
-        case KEY_X: return shift ? 'X' : 'x';
-        case KEY_Y: return shift ? 'Y' : 'y';
-        case KEY_Z: return shift ? 'Z' : 'z';
-        case KEY_SPACE:      return ' ';
-        case KEY_MINUS:      return shift ? '_' : '-';
-        case KEY_EQUAL:      return shift ? '+' : '=';
-        case KEY_LEFTBRACE:  return shift ? '{' : '[';
-        case KEY_RIGHTBRACE: return shift ? '}' : ']';
-        case KEY_BACKSLASH:  return shift ? '|' : '\\';
-        case KEY_SEMICOLON:  return shift ? ':' : ';';
-        case KEY_APOSTROPHE: return shift ? '"' : '\'';
-        case KEY_COMMA:      return shift ? '<' : ',';
-        case KEY_DOT:        return shift ? '>' : '.';
-        case KEY_SLASH:      return shift ? '?' : '/';
-        default: return -1;
-    }
-}
-
 static void cycle_alert_mode(struct app_state *st)
 {
     static const char *modes[5] = { "vibro", "soft", "led", "off", "loud" };
@@ -1557,12 +1508,12 @@ static void send_flipper_key(struct app_state *st, const char *fkey, const char 
     send_flipper_key_ex(st, fkey, mode, 0);
 }
 
-static void handle_key_repeat(struct app_state *st, int code)
+static void handle_key_repeat(struct app_state *st, int code, int is_tca8418)
 {
     if (st->tab != TAB_REMOTE || !st->mirror_active || st->pin_modal) return;
     const char *dir = NULL;
-    if (code == KEY_UP || code == KEY_SEMICOLON || code == KEY_W) dir = "up";
-    else if (code == KEY_DOWN || code == KEY_SLASH || code == KEY_S) dir = "down";
+    if (code == KEY_UP || (!is_tca8418 && code == KEY_SEMICOLON) || code == KEY_W) dir = "up";
+    else if (code == KEY_DOWN || (!is_tca8418 && code == KEY_SLASH) || code == KEY_S) dir = "down";
     else if (code == KEY_LEFT || code == KEY_A) dir = "left";
     else if (code == KEY_RIGHT || code == KEY_D) dir = "right";
     if (!dir) return;
@@ -1588,11 +1539,15 @@ static void submit_pin_reply(struct app_state *st, const char *pin_str)
     set_banner(st, "Verifying BLE passkey...", COL_CYAN);
 }
 
-static void handle_key_press(struct app_state *st, int code)
+static void handle_key_press(struct app_state *st, int code, int is_tca8418)
 {
+    int sym_ch = (is_tca8418 && code >= 0 && code < CZ_TCA8418_SYM_MAX)
+                 ? (unsigned char)st->sym_map[code] : 0;
+    int is_back_grave = (!is_tca8418 && code == KEY_GRAVE);
+
     /* When PIN modal is active, number keys 0-9 enter PIN digits! */
     if (st->pin_modal) {
-        int dg = keycode_to_digit(code);
+        int dg = (!is_tca8418 || sym_ch == 0) ? keycode_to_digit(code) : -1;
         if (dg >= 0 && st->pin_len < 6) {
             st->pin_digits[st->pin_len++] = (char)dg;
             st->pin_digits[st->pin_len] = '\0';
@@ -1610,7 +1565,7 @@ static void handle_key_press(struct app_state *st, int code)
             submit_pin_reply(st, st->pin_digits);
             return;
         }
-        if (code == KEY_ESC || code == KEY_GRAVE) {
+        if (code == KEY_ESC || is_back_grave) {
             submit_pin_reply(st, "");
             return;
         }
@@ -1623,7 +1578,7 @@ static void handle_key_press(struct app_state *st, int code)
             g_quit = 1;
             return;
         }
-        if (code == KEY_4 || code == KEY_ESC || code == KEY_GRAVE || code == KEY_Q ||
+        if (code == KEY_4 || code == KEY_ESC || is_back_grave || code == KEY_Q ||
             code == KEY_BACKSPACE) {
             st->qr_modal = 0;
             return;
@@ -1652,7 +1607,7 @@ static void handle_key_press(struct app_state *st, int code)
             g_quit = 1;
             return;
         }
-        if (code == KEY_4 || code == KEY_ESC || code == KEY_GRAVE) {
+        if (code == KEY_4 || code == KEY_ESC || is_back_grave) {
             st->ir_modal = 0;
             return;
         }
@@ -1662,15 +1617,15 @@ static void handle_key_press(struct app_state *st, int code)
             st->ir_sel = 0;
             return;
         }
-        if (code == KEY_UP || code == KEY_SEMICOLON) {
+        if (code == KEY_UP || (!is_tca8418 && code == KEY_SEMICOLON)) {
             if (st->ir_sel > 0) st->ir_sel--;
             return;
         }
-        if (code == KEY_DOWN || code == KEY_SLASH) {
+        if (code == KEY_DOWN || (!is_tca8418 && code == KEY_SLASH)) {
             if (st->ir_sel + 1 < fcnt) st->ir_sel++;
             return;
         }
-        if ((code == KEY_LEFT || code == KEY_COMMA) && st->ir_remote_count > 1) {
+        if ((code == KEY_LEFT || (!is_tca8418 && code == KEY_COMMA)) && st->ir_remote_count > 1) {
             st->ir_remote_idx = (st->ir_remote_idx + st->ir_remote_count - 1) % st->ir_remote_count;
             char lcmd[256];
             snprintf(lcmd, sizeof(lcmd), "{\"op\":\"ir_list\",\"src\":\"%s\"}\n",
@@ -1678,7 +1633,8 @@ static void handle_key_press(struct app_state *st, int code)
             ipc_send_request(st, "ir_list", lcmd);
             return;
         }
-        if ((code == KEY_RIGHT || code == KEY_DOT || code == KEY_TAB) && st->ir_remote_count > 1) {
+        if ((code == KEY_RIGHT || (!is_tca8418 && code == KEY_DOT) || code == KEY_TAB) &&
+            st->ir_remote_count > 1) {
             st->ir_remote_idx = (st->ir_remote_idx + 1) % st->ir_remote_count;
             char rcmd[256];
             snprintf(rcmd, sizeof(rcmd), "{\"op\":\"ir_list\",\"src\":\"%s\"}\n",
@@ -1696,7 +1652,7 @@ static void handle_key_press(struct app_state *st, int code)
                          st->ir_btns[bi].index);
                 ipc_send_request(st, "ir_tx", icmd);
             } else {
-                set_banner(st, "No button selected — [,/.] switch remote or [5] Learn", COL_YELLOW);
+                set_banner(st, "No button selected — [Fn+L/R] switch remote or [5] Learn", COL_YELLOW);
             }
             return;
         }
@@ -1721,7 +1677,7 @@ static void handle_key_press(struct app_state *st, int code)
             }
             return;
         }
-        int ch = evdev_to_ascii(code, st->shift_held);
+        int ch = cz_evdev_to_ascii(st->sym_map, is_tca8418, code, st->shift_held);
         if (ch >= 32 && st->ir_filter_len + 1 < (int)sizeof(st->ir_filter)) {
             st->ir_filter[st->ir_filter_len++] = (char)ch;
             st->ir_filter[st->ir_filter_len] = '\0';
@@ -1730,9 +1686,9 @@ static void handle_key_press(struct app_state *st, int code)
         return;
     }
 
-    /* Full 46-key QWERTY typing mode inside STUDIO tab */
+    /* Full 46-key QWERTY + Sym typing mode inside STUDIO tab */
     if (st->tab == TAB_STUDIO && st->studio_edit_active) {
-        if (code == KEY_ESC || code == KEY_GRAVE) {
+        if (code == KEY_ESC || is_back_grave) {
             st->studio_edit_active = 0;
             set_banner(st, "Exited typing mode ([7:PUSH+GO] to upload)", COL_CYAN);
             return;
@@ -1746,7 +1702,7 @@ static void handle_key_press(struct app_state *st, int code)
             st->studio_buf[st->studio_len] = '\0';
             return;
         }
-        int ch = evdev_to_ascii(code, st->shift_held);
+        int ch = cz_evdev_to_ascii(st->sym_map, is_tca8418, code, st->shift_held);
         if (ch >= 32 && st->studio_len + 1 < STUDIO_MAX) {
             st->studio_buf[st->studio_len++] = (char)ch;
             st->studio_buf[st->studio_len] = '\0';
@@ -1761,23 +1717,23 @@ static void handle_key_press(struct app_state *st, int code)
             g_quit = 1;
             return;
         }
-        if (code == KEY_4 || code == KEY_ESC || code == KEY_GRAVE) {
+        if (code == KEY_4 || code == KEY_ESC || is_back_grave) {
             stop_mirror_mode(st, "Stopped screen stream", COL_CYAN);
             return;
         }
-        if (code == KEY_TAB || code == KEY_DOT) {
+        if (code == KEY_TAB || sym_ch == '.' || (!is_tca8418 && code == KEY_DOT)) {
             stop_mirror_mode(st, "Stopped screen stream", COL_CYAN);
             st->tab = (st->tab + 1) % TAB_COUNT;
             return;
         }
-        if (code == KEY_COMMA) {
+        if (sym_ch == ',' || (!is_tca8418 && code == KEY_COMMA)) {
             stop_mirror_mode(st, "Stopped screen stream", COL_CYAN);
             st->tab = (st->tab + TAB_COUNT - 1) % TAB_COUNT;
             return;
         }
-        if (code == KEY_UP || code == KEY_SEMICOLON || code == KEY_W) {
+        if (code == KEY_UP || (!is_tca8418 && code == KEY_SEMICOLON) || code == KEY_W) {
             send_flipper_key(st, "up", "short");
-        } else if (code == KEY_DOWN || code == KEY_SLASH || code == KEY_S) {
+        } else if (code == KEY_DOWN || (!is_tca8418 && code == KEY_SLASH) || code == KEY_S) {
             send_flipper_key(st, "down", "short");
         } else if (code == KEY_LEFT || code == KEY_A) {
             send_flipper_key(st, "left", "short");
@@ -1793,23 +1749,24 @@ static void handle_key_press(struct app_state *st, int code)
         return;
     }
 
-    if (code == KEY_COMMA || code == KEY_LEFT) {
+    if (code == KEY_LEFT || sym_ch == ',' || (!is_tca8418 && code == KEY_COMMA)) {
         st->tab = (st->tab + TAB_COUNT - 1) % TAB_COUNT;
         return;
     }
-    if (code == KEY_DOT || code == KEY_RIGHT || code == KEY_TAB) {
+    if (code == KEY_RIGHT || code == KEY_TAB || sym_ch == '.' ||
+        (!is_tca8418 && code == KEY_DOT)) {
         st->tab = (st->tab + 1) % TAB_COUNT;
         return;
     }
 
-    if (code == KEY_UP || code == KEY_SEMICOLON) {
+    if (code == KEY_UP || (!is_tca8418 && code == KEY_SEMICOLON)) {
         if (st->tab == TAB_LINK && st->dev_sel > 0) st->dev_sel--;
         else if (st->tab == TAB_CAP && !st->cap_view_detail && st->cap_sel > 0) st->cap_sel--;
         else if (st->tab == TAB_JOBS && st->job_sel > 0) st->job_sel--;
         else if (st->log_scroll > 0) st->log_scroll--;
         return;
     }
-    if (code == KEY_DOWN || code == KEY_SLASH) {
+    if (code == KEY_DOWN || (!is_tca8418 && code == KEY_SLASH)) {
         if (st->tab == TAB_LINK && st->dev_sel + 1 < st->dev_count) st->dev_sel++;
         else if (st->tab == TAB_CAP && !st->cap_view_detail && st->cap_sel + 1 < st->cap_count) st->cap_sel++;
         else if (st->tab == TAB_JOBS && st->job_sel + 1 < st->job_count) st->job_sel++;
@@ -2033,6 +1990,7 @@ int main(void)
     st.ipc_fd = -1;
     st.flipper_bat = -1;
     st.link_rssi = -100;
+    cz_tca8418_keymap_load(CZ_TCA8418_KEYMAP_PATH, st.sym_map);
     snprintf(st.alert_mode, sizeof(st.alert_mode), "vibro");
     apply_studio_preset(&st, 0);
     set_banner(&st, "Zero2Zero BLE Offload Companion", COL_CYAN);
@@ -2061,7 +2019,11 @@ int main(void)
     }
 
     int in_fds[CZ_MAX_INPUT_FDS];
+    int in_tca8418[CZ_MAX_INPUT_FDS];
     int n_in = cz_inputs_open(in_fds, CZ_MAX_INPUT_FDS);
+    for (int i = 0; i < n_in; i++)
+        in_tca8418[i] = cz_is_tca8418_fd(in_fds[i]);
+    cz_inputs_sync_modifiers(in_fds, n_in, &st.shift_held, NULL, NULL);
 
     ipc_send_request(&st, "status", "{\"op\":\"status\",\"query_rpc\":false}\n");
 
@@ -2127,14 +2089,14 @@ int main(void)
                         st.shift_held = (ev.value != 0);
                         continue;
                     }
-                    if (ev.code == KEY_ESC || ev.code == KEY_GRAVE) {
+                    if (ev.code == KEY_ESC || (!in_tca8418[i] && ev.code == KEY_GRAVE)) {
                         if (ev.value == 1) esc_down_at = cz_mono_sec();
                         else if (ev.value == 0) esc_down_at = 0.0;
                     }
                     if (ev.value == 1) {
-                        handle_key_press(&st, ev.code);
+                        handle_key_press(&st, ev.code, in_tca8418[i]);
                     } else if (ev.value == 2) {
-                        handle_key_repeat(&st, ev.code);
+                        handle_key_repeat(&st, ev.code, in_tca8418[i]);
                     }
                 }
             }

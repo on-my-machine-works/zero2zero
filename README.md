@@ -54,7 +54,7 @@ cd zero2zero
 make          # Build the z2z-ui LCD app
 make fap      # Optional: rebuild flipper_app/dist/zero2zero.fap from source
 make check    # Run UI, Python, and Flipper app tests
-make deb      # Build dist/zero2zero_0.1.0_arm64.deb
+make deb      # Build dist/zero2zero_0.1.1_arm64.deb
 
 # Or build and deploy over SSH in one step:
 ./packaging/deploy-live.sh kali@kali-cardputerzero.local
@@ -62,7 +62,7 @@ make deb      # Build dist/zero2zero_0.1.0_arm64.deb
 
 ## Handheld UI (`z2z-ui`)
 
-Use `,` / `.` (or `Left` / `Right`) to switch tabs, `;` / `/` (or `Up` / `Down`) to move through lists, and `[8]` (or hold `` ` `` / `ESC` for `1.2s`) to exit.
+Use `Fn+Left` / `Fn+Right`, `Tab`, or `,` / `.` to switch tabs, `Fn+Up` / `Fn+Down` (or `;` / `/` on external keyboards) to move through lists, and `[8]` (or hold `ESC` for `1.2s`) to exit.
 
 | Tab | Softkeys (`4` - `7`) | Extra Keys |
 | :--- | :--- | :--- |
@@ -76,7 +76,7 @@ Use `,` / `.` (or `Left` / `Right`) to switch tabs, `;` / `/` (or `Up` / `Down`)
 ## CLI Reference (`z2z`)
 
 ```bash
-z2z --version                                # Show version (z2z 0.1.0)
+z2z --version                                # Show version (z2z 0.1.1)
 z2z scan                                     # Scan for nearby Flipper Zero devices
 z2z pair                                     # Pair using the 6-digit PIN shown on Flipper
 z2z connect                                  # Connect to the paired Flipper
